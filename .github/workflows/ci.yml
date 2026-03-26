@@ -1,0 +1,63 @@
+name: .NET
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 7.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Check formatting
+        run: dotnet format --verify-no-changes
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test with coverage
+        run: |
+          dotnet test --no-build --configuration Release \
+          /p:CollectCoverage=true \
+          /p:CoverletOutput=./coverage/ \
+          /p:CoverletOutputFormat=cobertura 
+
+      - name: Install report generator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+      
+      - run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+      - name: Generate coverage report
+        run: reportgenerator \
+            -reports:coverage/coverage.cobertura.xml \
+            -targetdir:coverage-report \
+            -reporttypes:TextSummary
+
+      - name: Extract coverage
+        run: |
+          COVERAGE=$(grep "Line coverage" coverage-report/Summary.txt | awk '{print $3}')
+          echo "Coverage: $COVERAGE"
+
+      - name: Comment coverage
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            **Code Coverage**
+            Line coverage: ${{ env.COVERAGE }}
